@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>PSSO Inventory Login</title>
+<style>
+body{
+    font-family: Arial;
+    background: #f4f6f9;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.box{
+    width: 360px;
+    background: #2c3e50; /* Matches inventory sidebar */
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    color: white;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+}
+
+img{
+    width: 110px;
+    margin-bottom: 20px;
+}
+
+input, select, button{
+    width: 100%;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 8px;
+    border: none;
+    font-size: 16px;
+    box-sizing: border-box; /* Ensures padding doesn't overflow */
+}
+
+input, select{
+    border: 1px solid #ccc;
+    background: white;
+    color: black;
+}
+
+button{
+    background: #f1c40f;
+    color: black;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover{
+    background: #d4ac0d;
+}
+
+a{
+    color: #f1c40f;
+    text-decoration: none;
+}
+
+a:hover{
+    text-decoration: underline;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+    <!-- Philippine School of Oman Logo -->
+    <img src="https://upload.wikimedia.org/wikipedia/commons/1/14/Philippine_School_of_Oman_Logo.png" alt="Philippine School of Oman Logo">
+    <h2 id="title">Login</h2>
+
+    <input id="user" placeholder="Username">
+    <input id="pass" type="password" placeholder="Password">
+
+    <!-- Role dropdown, hidden initially -->
+    <select id="role" style="display:none;">
+        <option value="Admin">Admin</option>
+        <option value="Teacher">Teacher</option>
+        <option value="Staff">Staff</option>
+    </select>
+
+    <button onclick="login()">Log In</button>
+
+    <p>
+        Don’t have an account?
+        <a href="#" onclick="showCreate()">Create Account</a>
+    </p>
+</div>
+
+<script>
+let userInput = document.getElementById("user");
+let passInput = document.getElementById("pass");
+let roleInput = document.getElementById("role");
+let title = document.getElementById("title");
+
+function login(){
+    let user = userInput.value;
+    let pass = passInput.value;
+    let users = JSON.parse(localStorage.getItem("users")) || [];
+
+    // Find user by username and password
+    let valid = users.find(u => u.user === user && u.pass === pass);
+    if(valid){
+        localStorage.setItem("currentUser", JSON.stringify({user: user, role: valid.role}));
+        location.href = "Sample2.html";
+    } else {
+        alert("Invalid login");
+    }
+}
+
+function showCreate(){
+    title.innerText = "Create Account";
+    document.querySelector("button").innerText = "Create";
+    document.querySelector("button").onclick = create;
+    document.querySelector("p").innerHTML =
+        'Already have an account? <a href="#" onclick="location.reload()">Log In</a>';
+
+    // Show role dropdown during account creation
+    roleInput.style.display = "block";
+}
+
+function create(){
+    if(!userInput.value || !passInput.value){
+        alert("Please enter username and password");
+        return;
+    }
+
+    let users = JSON.parse(localStorage.getItem("users")) || [];
+
+    // Check if username already exists for the same role
+    if(users.find(u => u.user === userInput.value && u.role === roleInput.value)){
+        alert("Username already exists for this role");
+        return;
+    }
+
+    users.push({user:userInput.value, pass:passInput.value, role:roleInput.value});
+    localStorage.setItem("users", JSON.stringify(users));
+    alert("Account created");
+    location.reload();
+}
+</script>
+
+</body>
+</html>

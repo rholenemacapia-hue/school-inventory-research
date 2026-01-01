@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>School Inventory</title>
+
+<!-- QuaggaJS for barcode scanning -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+
+<style>
+:root{--sidebar:#2c3e50;--sidebar-hover:#34495e;--bg:#f4f6f9}
+html,body{height:100%;margin:0;font-family:Arial;background:var(--bg)}
+
+.app-wrap{display:flex;height:100vh}
+.sidebar{width:220px;background:var(--sidebar);color:white;padding:18px}
+.sidebar a{display:block;color:white;text-decoration:none;padding:10px;border-radius:8px;margin-bottom:6px}
+.sidebar a:hover{background:var(--sidebar-hover)}
+.main{flex:1;padding:20px;overflow:auto}
+
+.page{display:none}
+.page.active{display:block}
+
+table{width:100%;border-collapse:collapse;background:white;margin-top:12px}
+th,td{border:1px solid #e9e9e9;padding:10px;text-align:center}
+th{background:var(--sidebar);color:white}
+
+.low-stock{background:#ffcccc}
+.nearly-low{background:#fff3cd}
+.reordered{background:#d4edda}
+
+button.small{
+  padding:6px 10px;border:none;border-radius:6px;
+  background:var(--sidebar);color:white;cursor:pointer
+}
+button.small:hover{background:var(--sidebar-hover)}
+td.actions{display:flex;gap:6px;justify-content:center}
+
+.form-box{background:white;padding:12px;border-radius:10px;margin-bottom:12px}
+
+/* MODALS */
+.modal{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.45);
+  display:none; align-items:center; justify-content:center;
+  z-index:1000;
+}
+.modal-box{
+  background:white;padding:20px;border-radius:12px;width:320px;text-align:center;
+}
+.modal-box input{width:100%;padding:8px;margin-bottom:10px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+
+/* CORNER NOTIFICATION */
+#cornerNotification{
+  position:fixed;
+  top:20px;
+  right:20px;
+  padding:14px 18px;
+  border-radius:12px;
+  font-size:14px;
+  font-weight:bold;
+  color:white;
+  display:none;
+  cursor:pointer;
+  z-index:2000;
+  box-shadow:0 6px 16px rgba(0,0,0,.3);
+}
+.corner-red{background:#dc3545}
+.corner-yellow{background:#ffc107;color:black}
+
+/* Barcode scanner container */
+#scanner-container {
+    width: 100%;
+    height: 250px;
+    margin-top: 10px;
+    display: none;
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="cornerNotification"></div>
+
+<div class="app-wrap">
+<aside class="sidebar">
+  <a href="#" onclick="showPage('home')">🏠 Home</a>
+  <a href="#" onclick="showPage('inventory')">📦 Inventory</a>
+  <a href="#" onclick="showPage('reorder')">🔁 Reorder</a>
+  <a href="#" onclick="showPage('history')">📜 History</a>
+</aside>
+
+<main class="main">
+
+<section id="home" class="page active">
+<h2>Inventory Overview</h2>
+<table>
+<thead>
+<tr><th>Product Code</th><th>Item</th><th>Qty</th><th>Min</th><th>Date</th></tr>
+</thead>
+<tbody id="homeInventoryTable"></tbody>
+</table>
+</section>
+
+<section id="inventory" class="page">
+<h2>Manage Inventory</h2>
+
+<div class="form-box">
+    <input id="itemCode" placeholder="Product Code">
+    <input id="itemName" placeholder="Product Name">
+    <input id="itemQty" type="number" placeholder="Qty">
+    <input id="itemMin" type="number" placeholder="Min">
+    <button class="small" onclick="addItem()">➕ Add</button>
+    <button class="small" onclick="startScanner()">📷 Scan Barcode</button>
+    <input id="inventorySearch" placeholder="🔍 Search Inventory" oninput="filterInventory()" style="margin-top:10px;">
+</div>
+
+<!-- Barcode scanner preview -->
+<div id="scanner-container"></div>
+
+<table>
+<thead>
+<tr><th>Code</th><th>Item</th><th>Qty</th><th>Min</th><th>Date</th><th>Actions</th></tr>
+</thead>
+<tbody id="inventoryTable"></tbody>
+</table>
+</section>
+
+<section id="reorder" class="page">
+<h2>Reorder List</h2>
+<table>
+<thead>
+<tr><th>Code</th><th>Item</th><th>Qty</th><th>Status</th><th>Action</th></tr>
+</thead>
+<tbody id="reorderTable"></tbody>
+</table>
+</section>
+
+<section id="history" class="page">
+<h2>History Log</h2>
+<table>
+<thead>
+<tr><th>User</th><th>Role</th><th>Action</th><th>Item</th><th>Qty</th><th>Date</th></tr>
+</thead>
+<tbody id="historyTable"></tbody>
+</table>
+</section>
+
+</main>
+</div>
+
+<!-- EDIT MODAL -->
+<div id="editModal" class="modal">
+<div class="modal-box">
+<h3>Edit Quantity</h3>
+<input id="editQty" type="number">
+<div class="modal-actions">
+<button class="small" onclick="closeEdit()">Cancel</button>
+<button class="small" onclick="saveEdit()">Save</button>
+</div>
+</div>
+</div>
+
+<!-- LOW STOCK MODAL -->
+<div id="lowStockModal" class="modal">
+<div class="modal-box">
+<h3>⚠️ Low Stock Alert</h3>
+<p id="lowStockText"></p>
+<div class="modal-actions">
+<button class="small" onclick="reorderNow()">Reorder Now</button>
+<button class="small" onclick="closeLowStock()">Close</button>
+</div>
+</div>
+</div>
+
+<script>
+let inventory=[], reorderList=[], history=[];
+let editIndex=null, currentLowItem=null;
+
+/* STORAGE */
+function saveToStorage(){
+  localStorage.setItem('inventory',JSON.stringify(inventory));
+  localStorage.setItem('reorderList',JSON.stringify(reorderList));
+  localStorage.setItem('history',JSON.stringify(history));
+}
+function loadFromStorage(){
+  inventory=JSON.parse(localStorage.getItem('inventory'))||[];
+  reorderList=JSON.parse(localStorage.getItem('reorderList'))||[];
+  history=JSON.parse(localStorage.getItem('history'))||[];
+}
+
+/* NAV */
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* HISTORY */
+function log(action,item,qty){
+  let userData = JSON.parse(localStorage.getItem("currentUser")) || {user:"Admin", role:"Admin"};
+  history.push({user:userData.user, role:userData.role, action, item, qty, date:new Date().toLocaleString()});
+  saveToStorage();
+  renderHistory();
+}
+
+/* ADD */
+function addItem(){
+  if(!itemCode.value||!itemName.value||!itemQty.value||!itemMin.value)return alert("Fill all fields");
+
+  const newItem={
+    code:itemCode.value,
+    name:itemName.value,
+    qty:+itemQty.value,
+    min:+itemMin.value,
+    date:new Date().toLocaleDateString()
+  };
+  inventory.push(newItem);
+  log('Added Item',newItem.name,newItem.qty);
+
+  if(newItem.qty < newItem.min){
+    triggerLowStock(newItem);
+  }
+
+  renderAll();
+}
+
+/* EDIT */
+function openEdit(i){
+  editIndex=i;
+  editQty.value=inventory[i].qty;
+  editModal.style.display='flex';
+}
+function saveEdit(){
+  inventory[editIndex].qty=+editQty.value;
+  log('Edited Quantity',inventory[editIndex].name,editQty.value);
+  editModal.style.display='none';
+
+  if(inventory[editIndex].qty < inventory[editIndex].min){
+    triggerLowStock(inventory[editIndex]);
+  }
+
+  renderAll();
+}
+function closeEdit(){editModal.style.display='none'}
+
+/* DELETE */
+function deleteItem(i){
+  log('Deleted Item',inventory[i].name,inventory[i].qty);
+  inventory.splice(i,1);
+  renderAll();
+}
+
+/* LOW STOCK */
+function triggerLowStock(item){
+  currentLowItem=item;
+  lowStockText.textContent=`"${item.name}" is below minimum stock.
+  Current: ${item.qty}, Min: ${item.min}`;
+  lowStockModal.style.display='flex';
+}
+
+function closeLowStock(){
+  lowStockModal.style.display='none';
+}
+
+/* REORDER */
+function reorderNow(){
+  if(!reorderList.some(r=>r.code===currentLowItem.code)){
+    reorderList.push({
+      code:currentLowItem.code,
+      name:currentLowItem.name,
+      qty:currentLowItem.qty,
+      status:'Pending'
+    });
+    log('Item Reordered',currentLowItem.name,currentLowItem.qty);
+  }
+  lowStockModal.style.display='none';
+  renderReorder();
+}
+
+function markReordered(i){
+  reorderList[i].status='Reordered';
+  log('Reorder Completed',reorderList[i].name,reorderList[i].qty);
+  renderReorder();
+}
+
+/* CORNER NOTIF */
+function updateCornerNotification(){
+  const notif=document.getElementById('cornerNotification');
+  notif.style.display='none';
+
+  let lowItems = inventory.filter(it => it.qty < it.min);
+  let nearlyLowItems = inventory.filter(it => it.qty <= it.min + 2 && it.qty >= it.min);
+
+  if(lowItems.length > 0){
+    notif.className='corner-red';
+    notif.textContent = `⚠️ ${lowItems.map(it=>it.name).join(', ')} LOW — Click`;
+    notif.style.display='block';
+    notif.onclick = () => {
+        triggerLowStock(lowItems[0]);
+    };
+  }
+  else if(nearlyLowItems.length > 0){
+    notif.className='corner-yellow';
+    notif.textContent = `ℹ️ ${nearlyLowItems.map(it=>it.name).join(', ')} getting low`;
+    notif.style.display='block';
+  }
+}
+
+/* RENDER */
+function renderInventory(){
+  inventoryTable.innerHTML='';
+  inventory.forEach((it,i)=>{
+    let cls=it.qty < it.min ? 'low-stock' : it.qty <= it.min+2 ? 'nearly-low' : '';
+    inventoryTable.innerHTML+=`
+    <tr class="${cls}">
+      <td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td><td>${it.min}</td><td>${it.date}</td>
+      <td class="actions">
+        <button class="small" onclick="openEdit(${i})">✏️</button>
+        <button class="small" onclick="deleteItem(${i})">🗑️</button>
+      </td>
+    </tr>`;
+  });
+}
+function renderHome(){
+  homeInventoryTable.innerHTML='';
+  inventory.forEach(it=>{
+    homeInventoryTable.innerHTML+=`
+    <tr>
+      <td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td><td>${it.min}</td><td>${it.date}</td>
+    </tr>`;
+  });
+}
+function renderReorder(){
+  reorderTable.innerHTML='';
+  reorderList.forEach((r,i)=>{
+    reorderTable.innerHTML+=`
+    <tr class="${r.status==='Reordered'?'reordered':''}">
+      <td>${r.code}</td><td>${r.name}</td><td>${r.qty}</td><td>${r.status}</td>
+      <td>${r.status==='Pending'?`<button class="small" onclick="markReordered(${i})">Reordered</button>`:'✔️'}</td>
+    </tr>`;
+  });
+}
+function renderHistory(){
+  historyTable.innerHTML='';
+  history.forEach(h=>{
+    historyTable.innerHTML+=`
+    <tr><td>${h.user}</td><td>${h.role}</td><td>${h.action}</td><td>${h.item}</td><td>${h.qty}</td><td>${h.date}</td></tr>`;
+  });
+}
+
+function renderAll(){
+  saveToStorage();
+  renderInventory();
+  renderHome();
+  renderReorder();
+  renderHistory();
+  updateCornerNotification();
+}
+
+/* SEARCH FILTER */
+function filterInventory() {
+    let filter = document.getElementById('inventorySearch').value.toLowerCase();
+    inventoryTable.innerHTML = '';
+    inventory.forEach((it, i) => {
+        if(it.name.toLowerCase().includes(filter) || it.code.toLowerCase().includes(filter)) {
+            let cls = it.qty < it.min ? 'low-stock' : it.qty <= it.min + 2 ? 'nearly-low' : '';
+            inventoryTable.innerHTML += `
+            <tr class="${cls}">
+              <td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td><td>${it.min}</td><td>${it.date}</td>
+              <td class="actions">
+                <button class="small" onclick="openEdit(${i})">✏️</button>
+                <button class="small" onclick="deleteItem(${i})">🗑️</button>
+              </td>
+            </tr>`;
+        }
+    });
+}
+
+/* BARCODE SCANNER */
+function startScanner(){
+    const container = document.getElementById('scanner-container');
+    container.style.display = 'block'; // show camera preview
+
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: container,
+            constraints: {
+                width: 480,
+                height: 320,
+                facingMode: "environment"
+            }
+        },
+        decoder: {
+            readers: ["code_128_reader","ean_reader","ean_8_reader","upc_reader","upc_e_reader"]
+        }
+    }, function(err){
+        if(err){
+            console.error(err);
+            alert("Error initializing scanner");
+            container.style.display = 'none';
+            return;
+        }
+        Quagga.start();
+    });
+
+    Quagga.onDetected(function(result){
+        let code = result.codeResult.code;
+        document.getElementById('itemCode').value = code;
+        Quagga.stop();
+        container.style.display = 'none';
+        alert("Scanned code: " + code);
+    });
+}
+
+loadFromStorage();
+renderAll();
+</script>
+</body>
+</html>
